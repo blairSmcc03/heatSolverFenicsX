@@ -3,6 +3,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 import mui4py
 from dolfinx import mesh, fem
+from dolfinx.fem.petsc import LinearProblem
 import ufl
 
 DOMAIN = "HeatSolverPy"
@@ -31,10 +32,14 @@ class Boundary():
         self.u_bc = fem.Function(V)
         self.u_bc.name = "u_bc"
         self.u_bc.interpolate(self)
+
         # Assume dirichlet boundary
         self.bc = fem.dirichletbc(self.u_bc, self.dofs)
 
         self.measure = ufl.Measure("ds", domain=domain, subdomain_data=self.facet_tag)
+
+        # Normal vector
+        self.n = ufl.FacetNormal(domain)
         
 
     def name(self):
@@ -103,35 +108,59 @@ class CoupledBoundary(Boundary):
         self.t_sampler_exact = mui4py.TemporalSamplerExact()
         self.t_sampler = mui4py.TemporalSamplerLinear()
 
+        # define aitken relaxation alg
+        self.a_algorithm = mui4py.AlgorithmAitken(0.5, 1.0, config=config)
+
 
 class NeumannCoupledBoundary(CoupledBoundary):
 
-    def __init__(self, name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD, q_flux):
+    def __init__(self, name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD, u_func, q_flux):
          # define neumann boundary condition, v=TestFunction(V)
         super().__init__(name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD)
         self.q_flux = q_flux
         self.flux_values = np.zeros(self.dof_coords.shape[0])
-       
 
-    def update(self, T, iteration):
+        self.u_func = u_func
 
- 
+    def update(self, iteration): 
         #push temperature to neighbour
+        T = self.u_func.x.array[self.dofs]
         self.interface.push_many("temp", self.dof_coords[:, 1:], T)
         self.interface.commit( iteration )
         # fetch heat flux from neighbour
         self.flux_values = self.interface.fetch_many("flux", self.dof_coords[:, 1:], iteration, self.s_sampler, self.t_sampler_exact)
-        for i, dof in enumerate(self.dofs):
-            self.q_flux.x.array[dof] = self.flux_values[i]
-        self.q_flux.x.scatter_forward()
 
+        self.q_flux.x.array[self.dofs] = self.flux_values
+        
+        self.q_flux.x.scatter_forward()
    
 class DirichletCoupledBoundary(CoupledBoundary):
 
-    def __init__(self, name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD):
+    def __init__(self, name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD, u_func, poly_order):
         super().__init__(name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD)
 
-    def update(self, Q, iteration):
+        self.u_func = u_func
+
+        # Create vector function space for flux
+        self.V_g = fem.functionspace(domain, ("Lagrange", poly_order, (self.gdim, )))
+
+        # Heat flux expression
+        flux_expr = -self.thermal_conductivity * ufl.dot(ufl.grad(self.u_func), self.n)
+
+        # Create a function for flux evaluation
+        flux = fem.Function(self.V_g)
+        flux.name = "flux"
+
+        # Project flux = -kappa * grad(u) onto V
+        w_f = ufl.TrialFunction(self.V_g)
+        v_f = ufl.TestFunction(self.V_g)
+        a_proj = ufl.inner(w_f, v_f) * ufl.dx
+        L_proj = ufl.inner(flux_expr, v_f) * ufl.dx
+        self.problem = LinearProblem(a_proj, L_proj)
+        
+
+    def update(self, iteration):
+        Q = self.compute_heat_flux()
         # push heat_flux to neighbour
         self.interface.push_many("flux", self.dof_coords[:, 1:], Q)
         self.interface.commit( iteration )
@@ -140,7 +169,17 @@ class DirichletCoupledBoundary(CoupledBoundary):
         self.values = self.interface.fetch_many("temp", self.dof_coords[:, 1:], iteration, self.s_sampler, self.t_sampler)
         self.interface.forget(iteration)
 
+    def compute_heat_flux(self):
+       
+        flux = self.problem.solve()
 
+        # Evaluate flux at these dofs
+        flux_vals = flux.x.array.reshape((-1, self.dof_coords.shape[1]))[self.dofs]
+        flux_vals = np.array(flux_vals)
+
+        return flux_vals
+
+# Deprecated for now
 class LinearInterpolationBoundary(CoupledBoundary):
 
     def __init__(self, name, domain, V, position, axis, fdim, gdim, MARK, PYTHON_COMM_WORLD, MPI_COMM_WORLD, kDelta: float):
@@ -148,7 +187,7 @@ class LinearInterpolationBoundary(CoupledBoundary):
 
         self.kDelta = kDelta
 
-    def update(self, T1, iteration):
+    def update(self, iteration):
         self.interface.push_many("temp", self.dof_coords, T1)
         self.interface.commit(iteration)
 
