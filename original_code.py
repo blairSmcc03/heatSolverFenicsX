@@ -181,8 +181,6 @@ if not quiet:
     print("{{FENICS}} Rank", LOCAL_COMM_WORLD.rank, "Number of boundary dofs:", len(boundary_dofs), "boundary facets:", len(boundary_facets))
 
 left_facets = mesh.locate_entities_boundary(domain, fdim, boundary_left)
-if left_facets.size == 0:
-    raise RuntimeError("No left facets found. Check boundary function or mesh coordinates.")
 
 # marker id for the left boundary
 left_facet_tag = mesh.meshtags(domain, fdim, left_facets, np.full_like(left_facets, LEFT_MARK))
@@ -197,8 +195,7 @@ dof_coords = V.tabulate_dof_coordinates().reshape((-1, gdim))
 left_dof_coords = dof_coords[left_dofs]
 
 right_facets = mesh.locate_entities_boundary(domain, fdim, boundary_right)
-if right_facets.size == 0:
-    raise RuntimeError("No right facets found. Check boundary function or mesh coordinates.")
+
 # marker id for the right boundary
 right_facet_tag = mesh.meshtags(domain, fdim, right_facets, np.full_like(right_facets, RIGHT_MARK))
 
