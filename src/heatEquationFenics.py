@@ -108,6 +108,8 @@ class HeatEquationFenics(HeatEquation):
         self.solver.setOperators(A)
         self.solver.setType(PETSc.KSP.Type.PREONLY)
         self.solver.getPC().setType(PETSc.PC.Type.LU)
+        self.solver.getPC().setFactorSolverType('mumps')
+
 
 
     def initialise_temperature_field(self, T0):

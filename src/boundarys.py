@@ -6,7 +6,7 @@ from dolfinx import mesh, fem
 from dolfinx.fem.petsc import LinearProblem
 import ufl
 
-DOMAIN = "HeatSolverPy"
+DOMAIN = "HeatSolverFenics"
 
 class Boundary():
 
@@ -22,7 +22,6 @@ class Boundary():
         self.ds = ufl.Measure("ds", domain=domain, subdomain_data=self.facet_tag)
 
         self.dofs = fem.locate_dofs_topological(V, fdim, self.facets)
-
         # Extract coordinates of DOFs
         self.dof_coords = V.tabulate_dof_coordinates().reshape((-1, gdim))[self.dofs]
         self.tree = cKDTree(self.dof_coords)
@@ -84,25 +83,32 @@ class CoupledBoundary(Boundary):
         self.PYTHON_COMM_WORLD = PYTHON_COMM_WORLD
         
         # Interface setup
-        self.solverNum = self.MPI_COMM_WORLD.Get_rank()
-        self.numSolvers = self.MPI_COMM_WORLD.Get_size()
+        self.rank = self.MPI_COMM_WORLD.Get_rank()
+        self.python_rank = self.PYTHON_COMM_WORLD.Get_rank()
 
-         # boundary is a plane
-        dims = 2
+        # Create a communicator of only ranks at the interface
+        interface_ranks = MPI_COMM_WORLD.Split(color=1, key=self.rank)
+
+
+        print("Rank {:d} has {:d} facets".format(self.rank, self.facets.shape[0]))
+
+        dims = 3
 
         # define config
         config = mui4py.Config(dims, mui4py.FLOAT64)
 
          # create interface
         interfaces = [name]
-        self.interface = mui4py.create_unifaces(DOMAIN, interfaces, config)[name]
+        self.interface = mui4py.create_unifaces(DOMAIN, interfaces, config, world = interface_ranks)[name]
 
         self.interface.set_data_types({"temp": mui4py.FLOAT64,
                                        "flux": mui4py.FLOAT64,
                                        "coupling": mui4py.FLOAT64,
                                        "weight": mui4py.FLOAT64})
         
-
+        # coordinates must be rounded to account for differing precisions betweeen openfoam and python
+        self.coupling_coordinates = np.round(self.dof_coords, decimals=8)
+        
         # define samplers
         self.s_sampler = mui4py.SamplerPseudoNearestNeighbor(0.2)
         self.t_sampler_exact = mui4py.TemporalSamplerExact()
@@ -122,16 +128,18 @@ class NeumannCoupledBoundary(CoupledBoundary):
 
         self.u_func = u_func
 
-    def update(self, iteration): 
-        #push temperature to neighbour
+    def update(self, iteration):
+        # get temperature at the boundary
         T = self.u_func.x.array[self.dofs]
-        self.interface.push_many("temp", self.dof_coords[:, 1:], T)
+        
+        #push temperature to neighbour
+        self.interface.push_many("temp", self.coupling_coordinates, T)
         self.interface.commit( iteration )
+
         # fetch heat flux from neighbour
-        self.flux_values = self.interface.fetch_many("flux", self.dof_coords[:, 1:], iteration, self.s_sampler, self.t_sampler_exact)
+        self.flux_values = self.interface.fetch_many("flux", self.coupling_coordinates, iteration, self.s_sampler, self.t_sampler_exact)
 
         self.q_flux.x.array[self.dofs] = self.flux_values
-        
         self.q_flux.x.scatter_forward()
    
 class DirichletCoupledBoundary(CoupledBoundary):
@@ -162,11 +170,11 @@ class DirichletCoupledBoundary(CoupledBoundary):
     def update(self, iteration):
         Q = self.compute_heat_flux()
         # push heat_flux to neighbour
-        self.interface.push_many("flux", self.dof_coords[:, 1:], Q)
+        self.interface.push_many("flux", self.coupling_coordinates, Q)
         self.interface.commit( iteration )
 
         # fetch temperature from neighbour
-        self.values = self.interface.fetch_many("temp", self.dof_coords[:, 1:], iteration, self.s_sampler, self.t_sampler)
+        self.values = self.interface.fetch_many("temp", self.coupling_coordinates, iteration, self.s_sampler, self.t_sampler)
         self.interface.forget(iteration)
 
     def compute_heat_flux(self):
