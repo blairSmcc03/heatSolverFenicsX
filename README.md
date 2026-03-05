@@ -41,7 +41,7 @@ Required packages:
 - `mpi4py v4.1.1`
 - `petsc4py v3.24.3`
 - `numpy v2.3.5`
-- `mui4py @ master ([branch](https://github.com/MxUI/MUI))`
+- `mui4py @ master`
   
 ---
 
