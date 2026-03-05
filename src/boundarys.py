@@ -73,6 +73,9 @@ class DirichletBoundary(Boundary):
     def __init__(self, name, domain, V, position, axis, fdim, gdim, MARK, value):
         super().__init__(name, domain, V, position, axis, fdim, gdim, MARK)
         self.values[:] = value
+
+    def update(self, iteration):
+        return
     
 
 class CoupledBoundary(Boundary):

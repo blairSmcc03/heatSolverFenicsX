@@ -75,23 +75,30 @@ class HeatEquation():
                                                 self.mesh.fdim, self.mesh.gdim, RIGHT_MARK, self.case_parameters['right_bc_temp'])
         
         self.bcs.append(self.right_boundary.bc)
-        if self.solver_parameters['coupled_boundary_type'] == "neumann":
-            self.left_boundary = NeumannCoupledBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
-                                                self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, self.q_flux)
 
-        elif self.solver_parameters['coupled_boundary_type'] == "dirichlet":
-            self.left_boundary = DirichletCoupledBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
-                                                self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, poly_order)
-            self.left_boundary.set_bc_val(self.case_parameters['left_bc_temp'])
-            self.bcs.append(self.left_boundary.bc)
-        elif self.solver_parameters['coupled_boundary_type'] == "linearInterpolation":
-            kDelta = self.thermal_conductivity.value/self.mesh.dx
-            self.left_boundary = LinearInterpolationBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
-                                                self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, kDelta)
-            self.left_boundary.set_bc_val(self.case_parameters['left_bc_temp'])
-            self.bcs.append(self.left_boundary.bc)
-        else:
-            raise Exception("Invalid coupled boundary type , "  + self.solver_parameters['coupled_boundary_type'] + ", specified")
+        match self.solver_parameters['coupled_boundary_type']:
+            case "neumann":
+                self.left_boundary = NeumannCoupledBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
+                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, self.q_flux)
+
+            case "dirichlet":
+                self.left_boundary = DirichletCoupledBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
+                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, poly_order)
+                self.left_boundary.set_bc_val(self.case_parameters['left_bc_temp'])
+                self.bcs.append(self.left_boundary.bc)
+            case "linearInterpolation":
+                kDelta = self.thermal_conductivity.value/self.mesh.dx
+                self.left_boundary = LinearInterpolationBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
+                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, kDelta)
+                self.left_boundary.set_bc_val(self.case_parameters['left_bc_temp'])
+                self.bcs.append(self.left_boundary.bc)
+            case "none":
+                self.left_boundary = DirichletBoundary("DirichletBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
+                                                self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.case_parameters['left_bc_temp'])
+        
+                self.bcs.append(self.left_boundary.bc)
+            case _:
+                raise Exception("Invalid coupled boundary type , "  + self.solver_parameters['coupled_boundary_type'] + ", specified")
 
 
         # heat equation in FEM form
