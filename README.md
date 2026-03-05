@@ -60,9 +60,9 @@ spack install   # this will take a while
 
 ## Usage
 
-To use the solver, create a case directory, similar to Openfoam with the following structure:
+To use the solver, create a case directory called "solid", similar to Openfoam with the following structure:
 ```
-├──myCase
+├──solid
   ├── output/
   ├── input/
     ├── case.json          # Specifies case parameters (e.g mesh lengths, thermal conductivity....)
@@ -100,7 +100,7 @@ The json files should have the following formats:
 }
 ```
 
-Then run the heat solver from the case directory as below. Note that if coupled_boundary_type is not set to 'none' then a corresponding openfoam script is required.
+Then run the heat solver from the directory above "solid" as below. Note that if coupled_boundary_type is not set to 'none' then a corresponding openfoam script is required.
 
 ```bash
 export PYTHONPATH=<path_to_heatSolverFenicsX>/heatSolverFenicsX/src:$PYTHONPATH
