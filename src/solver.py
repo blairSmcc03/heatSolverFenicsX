@@ -9,10 +9,10 @@ import petsc4py
 petsc4py.init(comm=PYTHON_COMM_WORLD)
 
 from output import Output
-from heatEquationFenics import HeatEquationFenics
+from heatEquation import HeatEquation
 
 
-heatSolver = HeatEquationFenics(PYTHON_COMM_WORLD, LOCAL_COMM_WORLD)
+heatSolver = HeatEquation(PYTHON_COMM_WORLD, LOCAL_COMM_WORLD)
 
 
 output = Output(heatSolver.mesh.domain, PYTHON_COMM_WORLD)
