@@ -47,6 +47,7 @@ class HeatEquation():
         # Define Constants
         self.thermal_conductivity = fem.Constant(self.mesh.domain, PETSc.ScalarType(thermal_conductivity))
         self.thermal_diffusivity = fem.Constant(self.mesh.domain, PETSc.ScalarType(thermal_diffusivity))
+        self.rhoCp = self.thermal_conductivity/self.thermal_diffusivity
         f = fem.Constant(self.mesh.domain, PETSc.ScalarType(0.0))  # source term
 
         # Functions
@@ -68,7 +69,7 @@ class HeatEquation():
         
         # Initial Conditions
         self.initialise_temperature_field(self.case_parameters['initial_temp'])
-        
+    
         # Boundary Conditions
         self.bcs = []
         self.right_boundary = DirichletBoundary("DirichletBoundary", self.mesh.domain, self.V, self.mesh.p_max[0], 0, 
@@ -82,14 +83,14 @@ class HeatEquation():
                                                     self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, self.q_flux)
 
             case "dirichlet":
+                print("Hello")
                 self.left_boundary = DirichletCoupledBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
-                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, poly_order)
+                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, self.thermal_conductivity, poly_order)
                 self.left_boundary.set_bc_val(self.case_parameters['left_bc_temp'])
                 self.bcs.append(self.left_boundary.bc)
             case "linearInterpolation":
-                kDelta = self.thermal_conductivity.value/self.mesh.dx
                 self.left_boundary = LinearInterpolationBoundary("CoupledBoundary", self.mesh.domain, self.V, self.mesh.p_min[0], 0, 
-                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, kDelta)
+                                                    self.mesh.fdim, self.mesh.gdim, LEFT_MARK, self.LOCAL_COMM_WORLD, self.GLOBAL_COMM_WORLD, self.uh, self.mesh.dx, self.thermal_conductivity.value)
                 self.left_boundary.set_bc_val(self.case_parameters['left_bc_temp'])
                 self.bcs.append(self.left_boundary.bc)
             case "none":
@@ -100,9 +101,8 @@ class HeatEquation():
             case _:
                 raise Exception("Invalid coupled boundary type , "  + self.solver_parameters['coupled_boundary_type'] + ", specified")
 
-
-        # heat equation in FEM form
-        F = (u - self.u_n) / self.dt * v * ufl.dx + self.thermal_diffusivity * ufl.dot(ufl.grad(u), ufl.grad(v)) * ufl.dx - f * v * ufl.dx - (self.q_flux/self.thermal_conductivity) * v * self.left_boundary.ds
+        # heat equation in variational form, divide through all terms by rho*Cp to reduce Courant number on OF
+        F = (u - self.u_n) / self.dt * v * ufl.dx + self.thermal_diffusivity * ufl.dot(ufl.grad(u), ufl.grad(v)) * ufl.dx - f/(self.rhoCp) * v * ufl.dx + (self.q_flux/(self.rhoCp)) * v * self.left_boundary.ds
 
         self.a = fem.form(ufl.lhs(F))
         self.L = fem.form(ufl.rhs(F))
